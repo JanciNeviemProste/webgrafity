@@ -122,11 +122,27 @@ export function CanvasOverlay() {
     (e: React.PointerEvent<HTMLCanvasElement>): Point => {
       const canvas = canvasRef.current!;
       const rect = canvas.getBoundingClientRect();
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
+      const elW = rect.width;
+      const elH = rect.height;
+      const canvasAspect = CANVAS_W / CANVAS_H;
+      const elAspect = elW / elH;
+
+      let renderW: number, renderH: number, offsetX: number, offsetY: number;
+      if (elAspect > canvasAspect) {
+        renderH = elH;
+        renderW = elH * canvasAspect;
+        offsetX = (elW - renderW) / 2;
+        offsetY = 0;
+      } else {
+        renderW = elW;
+        renderH = elW / canvasAspect;
+        offsetX = 0;
+        offsetY = (elH - renderH) / 2;
+      }
+
       return {
-        x: (e.clientX - rect.left) * scaleX,
-        y: (e.clientY - rect.top) * scaleY,
+        x: ((e.clientX - rect.left - offsetX) / renderW) * CANVAS_W,
+        y: ((e.clientY - rect.top - offsetY) / renderH) * CANVAS_H,
       };
     },
     []
