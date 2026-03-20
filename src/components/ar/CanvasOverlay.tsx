@@ -93,8 +93,9 @@ export function CanvasOverlay() {
   const [usePresets, setUsePresets] = useState(false);
   const [opacity, setOpacity] = useState(0.85);
 
-  // Drag state
+  // Drag state — use ref for immediate reads in pointer handlers
   const [dragMode, setDragMode] = useState<DragMode>('none');
+  const dragModeRef = useRef<DragMode>('none');
   const dragStartRef = useRef<Point>({ x: 0, y: 0 });
   const dragRectStartRef = useRef<OverlayRect>({ x: 0, y: 0, w: 0, h: 0 });
   const aspectRef = useRef(1);
@@ -199,21 +200,27 @@ export function CanvasOverlay() {
     dragStartRef.current = pt;
     dragRectStartRef.current = { ...r };
 
+    const startDrag = (mode: DragMode) => {
+      dragModeRef.current = mode;
+      setDragMode(mode);
+    };
+
     // Check 4 corner handles (check corners before move)
-    if (hitHandle(pt, r.x, r.y)) { setDragMode('resize-tl'); return; }
-    if (hitHandle(pt, r.x + r.w, r.y)) { setDragMode('resize-tr'); return; }
-    if (hitHandle(pt, r.x, r.y + r.h)) { setDragMode('resize-bl'); return; }
-    if (hitHandle(pt, r.x + r.w, r.y + r.h)) { setDragMode('resize-br'); return; }
+    if (hitHandle(pt, r.x, r.y)) { startDrag('resize-tl'); return; }
+    if (hitHandle(pt, r.x + r.w, r.y)) { startDrag('resize-tr'); return; }
+    if (hitHandle(pt, r.x, r.y + r.h)) { startDrag('resize-bl'); return; }
+    if (hitHandle(pt, r.x + r.w, r.y + r.h)) { startDrag('resize-br'); return; }
 
     // Check inside overlay for move
     if (pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h) {
-      setDragMode('move');
+      startDrag('move');
     }
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     e.preventDefault();
-    if (dragMode === 'none') return;
+    const mode = dragModeRef.current;
+    if (mode === 'none') return;
 
     const pt = getCanvasPoint(e);
     const dx = pt.x - dragStartRef.current.x;
@@ -221,20 +228,20 @@ export function CanvasOverlay() {
     const s = dragRectStartRef.current;
     const ar = aspectRef.current;
 
-    if (dragMode === 'move') {
+    if (mode === 'move') {
       setOverlayRect({ x: s.x + dx, y: s.y + dy, w: s.w, h: s.h });
-    } else if (dragMode === 'resize-br') {
+    } else if (mode === 'resize-br') {
       const newW = Math.max(40, s.w + dx);
       setOverlayRect({ x: s.x, y: s.y, w: newW, h: newW / ar });
-    } else if (dragMode === 'resize-bl') {
+    } else if (mode === 'resize-bl') {
       const newW = Math.max(40, s.w - dx);
       const newH = newW / ar;
       setOverlayRect({ x: s.x + s.w - newW, y: s.y, w: newW, h: newH });
-    } else if (dragMode === 'resize-tr') {
+    } else if (mode === 'resize-tr') {
       const newW = Math.max(40, s.w + dx);
       const newH = newW / ar;
       setOverlayRect({ x: s.x, y: s.y + s.h - newH, w: newW, h: newH });
-    } else if (dragMode === 'resize-tl') {
+    } else if (mode === 'resize-tl') {
       const newW = Math.max(40, s.w - dx);
       const newH = newW / ar;
       setOverlayRect({ x: s.x + s.w - newW, y: s.y + s.h - newH, w: newW, h: newH });
@@ -242,6 +249,7 @@ export function CanvasOverlay() {
   };
 
   const onPointerUp = () => {
+    dragModeRef.current = 'none';
     setDragMode('none');
   };
 
