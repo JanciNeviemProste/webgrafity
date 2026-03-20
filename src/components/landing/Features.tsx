@@ -1,23 +1,23 @@
 const features = [
   {
     icon: '\uD83D\uDCF7',
-    title: 'Live kamera',
-    desc: 'Pouzi kameru telefonu a vidis graffiti v realnom case na stene.',
+    title: 'Odfo\u0165 stenu',
+    desc: 'Pouzi kameru alebo nahraj fotku realnej steny kde chces malovat.',
   },
   {
     icon: '\uD83C\uDFA8',
-    title: '5 dizajnov',
-    desc: 'Vyber si z galerie predpripravenych street art dizajnov.',
+    title: 'Nahraj dizajn',
+    desc: 'Nahraj lubovolny obrazok — pozadie sa automaticky odstrani.',
   },
   {
     icon: '\uD83D\uDD04',
     title: 'Perspektiva',
-    desc: 'Automaticka perspektivna transformacia na lubovolny tvar steny.',
+    desc: 'Oznac 4 rohy steny a dizajn sa automaticky prizposobi tvaru.',
   },
   {
     icon: '\uD83D\uDCBE',
-    title: 'Export do PNG',
-    desc: 'Uloz vysledok ako obrazok a zdielaj ho s kamaratmi.',
+    title: 'Uloz a maluj',
+    desc: 'Uloz preview ako PNG a podla neho to namaluj naozaj!',
   },
 ];
 

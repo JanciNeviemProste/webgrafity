@@ -7,6 +7,8 @@ export type SelectionPhase = 'selecting' | 'complete';
 
 export type BackgroundMode = 'wall' | 'camera' | 'upload';
 
+export type StudioStep = 'choose-wall' | 'choose-design' | 'place-graffiti';
+
 export interface DragState {
   index: number;
   active: boolean;

@@ -9,7 +9,7 @@ export function exportCanvas(
   canvasWidth: number,
   canvasHeight: number,
   corners: Point[],
-  graffitiCanvas: HTMLCanvasElement | null,
+  graffitiCanvas: CanvasImageSource | null,
   opacity: number,
   options: ExportOptions = {}
 ): void {

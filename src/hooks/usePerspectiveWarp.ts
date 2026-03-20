@@ -11,7 +11,7 @@ export function usePerspectiveWarp() {
     (
       ctx: CanvasRenderingContext2D,
       corners: Point[],
-      graffitiCanvas: HTMLCanvasElement | null,
+      graffitiCanvas: CanvasImageSource | null,
       opacity: number,
       phase: string,
       dragging: number

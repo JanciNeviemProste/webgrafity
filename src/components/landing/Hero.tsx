@@ -24,7 +24,7 @@ export function Hero() {
       </h1>
 
       <p className="mb-8 max-w-md text-lg text-gray-400">
-        Vizualizuj street art na realnych stenach. Otvor kameru, oznac stenu a vyber dizajn.
+        Odfo&#x165; re&#xe1;lnu stenu, nahraj svoj dizajn a pozri ako bude vyzerať. Potom to namaľuj!
       </p>
 
       <Link

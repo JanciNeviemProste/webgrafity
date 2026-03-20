@@ -2,6 +2,12 @@ import { Point } from '@/types';
 
 export const DEFAULT_GRID_SIZE = 16;
 
+function getImageSize(img: CanvasImageSource): { width: number; height: number } {
+  if (img instanceof HTMLImageElement) return { width: img.naturalWidth, height: img.naturalHeight };
+  if (img instanceof HTMLVideoElement) return { width: img.videoWidth, height: img.videoHeight };
+  return { width: (img as HTMLCanvasElement).width, height: (img as HTMLCanvasElement).height };
+}
+
 export function bilerp(corners: Point[], u: number, v: number): Point {
   return {
     x:
@@ -65,8 +71,7 @@ export function drawPerspectiveWarp(
   if (!img || corners.length !== 4) return;
 
   ctx.globalAlpha = opacity;
-  const w = (img as HTMLCanvasElement).width;
-  const h = (img as HTMLCanvasElement).height;
+  const { width: w, height: h } = getImageSize(img);
 
   for (let i = 0; i < gridSize; i++) {
     for (let j = 0; j < gridSize; j++) {
