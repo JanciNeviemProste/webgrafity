@@ -2,22 +2,35 @@
 
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { generateGraffiti, generateWall, DESIGN_LABELS, DESIGN_COLORS } from '@/lib/graffiti-gen';
-import { exportCanvas } from '@/lib/export';
 import { useCamera } from '@/hooks/useCamera';
-import { useCornerSelection } from '@/hooks/useCornerSelection';
 import { useAnimationFrame } from '@/hooks/useAnimationFrame';
-import { usePerspectiveWarp } from '@/hooks/usePerspectiveWarp';
 import { useBackgroundRemoval } from '@/hooks/useBackgroundRemoval';
-import { CornerSelector } from '@/components/ar/CornerSelector';
 import { DesignGallery } from '@/components/ui/DesignGallery';
 import { OpacitySlider } from '@/components/ui/OpacitySlider';
 import { SaveDialog } from '@/components/ui/SaveDialog';
 import { WallPrompt } from '@/components/ui/WallPrompt';
 import { DesignUploader } from '@/components/ui/DesignUploader';
-import type { BackgroundMode, StudioStep, Point } from '@/types';
+import type { BackgroundMode, StudioStep, Point, OverlayRect } from '@/types';
 
 const CANVAS_W = 900;
 const CANVAS_H = 600;
+const HANDLE_SIZE = 24;
+
+function getImageNaturalSize(img: CanvasImageSource): { w: number; h: number } {
+  if (img instanceof HTMLImageElement) return { w: img.naturalWidth, h: img.naturalHeight };
+  if (img instanceof HTMLCanvasElement) return { w: img.width, h: img.height };
+  return { w: 400, h: 300 };
+}
+
+function centerOverlay(img: CanvasImageSource): OverlayRect {
+  const { w: iw, h: ih } = getImageNaturalSize(img);
+  const maxW = CANVAS_W * 0.5;
+  const maxH = CANVAS_H * 0.5;
+  const scale = Math.min(maxW / iw, maxH / ih, 1);
+  const w = iw * scale;
+  const h = ih * scale;
+  return { x: (CANVAS_W - w) / 2, y: (CANVAS_H - h) / 2, w, h };
+}
 
 export function CanvasOverlay() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -28,29 +41,25 @@ export function CanvasOverlay() {
   const [step, setStep] = useState<StudioStep>('choose-wall');
   const [bgMode, setBgMode] = useState<BackgroundMode>('wall');
   const [overlayImage, setOverlayImage] = useState<CanvasImageSource | null>(null);
+  const [overlayRect, setOverlayRect] = useState<OverlayRect>({ x: 0, y: 0, w: 0, h: 0 });
   const [selectedPreset, setSelectedPreset] = useState(0);
   const [usePresets, setUsePresets] = useState(false);
   const [opacity, setOpacity] = useState(0.85);
 
+  // Drag state
+  const [dragMode, setDragMode] = useState<'none' | 'move' | 'resize'>('none');
+  const dragStartRef = useRef<Point>({ x: 0, y: 0 });
+  const dragRectStartRef = useRef<OverlayRect>({ x: 0, y: 0, w: 0, h: 0 });
+  const aspectRef = useRef(1);
+
   const camera = useCamera();
   const bgRemoval = useBackgroundRemoval();
-  const {
-    corners,
-    phase,
-    dragging,
-    handlePointerDown,
-    handlePointerMove,
-    handlePointerUp,
-    reset,
-  } = useCornerSelection();
-  const { renderWarp } = usePerspectiveWarp();
 
   // Generate presets and wall on mount
   useEffect(() => {
     presetsRef.current = Array.from({ length: 5 }, (_, i) => generateGraffiti(i));
     wallRef.current = generateWall();
   }, []);
-
 
   const getCanvasPoint = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>): Point => {
@@ -79,10 +88,7 @@ export function CanvasOverlay() {
     if (bgMode === 'camera' && video && video.readyState >= 2) {
       const vAspect = video.videoWidth / video.videoHeight;
       const cAspect = CANVAS_W / CANVAS_H;
-      let sx = 0,
-        sy = 0,
-        sw = video.videoWidth,
-        sh = video.videoHeight;
+      let sx = 0, sy = 0, sw = video.videoWidth, sh = video.videoHeight;
       if (vAspect > cAspect) {
         sw = video.videoHeight * cAspect;
         sx = (video.videoWidth - sw) / 2;
@@ -95,10 +101,7 @@ export function CanvasOverlay() {
       const img = bgImageRef.current;
       const iAspect = img.naturalWidth / img.naturalHeight;
       const cAspect = CANVAS_W / CANVAS_H;
-      let dx = 0,
-        dy = 0,
-        dw = CANVAS_W,
-        dh = CANVAS_H;
+      let dx = 0, dy = 0, dw = CANVAS_W, dh = CANVAS_H;
       if (iAspect > cAspect) {
         dh = CANVAS_W / iAspect;
         dy = (CANVAS_H - dh) / 2;
@@ -111,29 +114,107 @@ export function CanvasOverlay() {
       ctx.drawImage(wallRef.current, 0, 0, CANVAS_W, CANVAS_H);
     }
 
-    // Draw perspective warp + corners
-    renderWarp(ctx, corners, overlayImage, opacity, phase, dragging);
+    // Draw overlay image
+    if (overlayImage && overlayRect.w > 0) {
+      ctx.globalAlpha = opacity;
+      ctx.drawImage(overlayImage, overlayRect.x, overlayRect.y, overlayRect.w, overlayRect.h);
+      ctx.globalAlpha = 1;
+
+      // Dashed border
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(overlayRect.x, overlayRect.y, overlayRect.w, overlayRect.h);
+      ctx.setLineDash([]);
+
+      // Resize handle (bottom-right corner)
+      const hx = overlayRect.x + overlayRect.w - HANDLE_SIZE;
+      const hy = overlayRect.y + overlayRect.h - HANDLE_SIZE;
+      ctx.fillStyle = 'rgba(255,0,110,0.8)';
+      ctx.fillRect(hx, hy, HANDLE_SIZE, HANDLE_SIZE);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(hx, hy, HANDLE_SIZE, HANDLE_SIZE);
+
+      // Small arrows in handle
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('\u2922', hx + HANDLE_SIZE / 2, hy + HANDLE_SIZE / 2);
+    }
   };
 
   // Continuous animation for camera mode
-  useAnimationFrame(renderFrame, bgMode === 'camera' && step === 'place-graffiti');
+  useAnimationFrame(renderFrame, bgMode === 'camera' && step === 'preview');
 
   // Re-render on state changes (non-camera mode)
   useEffect(() => {
-    if (step === 'place-graffiti' && bgMode !== 'camera') {
+    if (step === 'preview' && bgMode !== 'camera') {
       renderFrame();
     }
-  }, [bgMode, corners, overlayImage, opacity, step, renderFrame]);
+  }, [bgMode, overlayImage, overlayRect, opacity, step, renderFrame]);
+
+  // --- Pointer handlers ---
+
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const pt = getCanvasPoint(e);
+
+    if (!overlayImage || overlayRect.w === 0) return;
+
+    // Check resize handle first
+    const hx = overlayRect.x + overlayRect.w - HANDLE_SIZE;
+    const hy = overlayRect.y + overlayRect.h - HANDLE_SIZE;
+    if (pt.x >= hx && pt.x <= hx + HANDLE_SIZE && pt.y >= hy && pt.y <= hy + HANDLE_SIZE) {
+      setDragMode('resize');
+      dragStartRef.current = pt;
+      dragRectStartRef.current = { ...overlayRect };
+      aspectRef.current = overlayRect.w / overlayRect.h;
+      return;
+    }
+
+    // Check if inside overlay rect
+    if (
+      pt.x >= overlayRect.x && pt.x <= overlayRect.x + overlayRect.w &&
+      pt.y >= overlayRect.y && pt.y <= overlayRect.y + overlayRect.h
+    ) {
+      setDragMode('move');
+      dragStartRef.current = pt;
+      dragRectStartRef.current = { ...overlayRect };
+      return;
+    }
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    if (dragMode === 'none') return;
+
+    const pt = getCanvasPoint(e);
+    const dx = pt.x - dragStartRef.current.x;
+    const dy = pt.y - dragStartRef.current.y;
+    const start = dragRectStartRef.current;
+
+    if (dragMode === 'move') {
+      setOverlayRect({ ...start, x: start.x + dx, y: start.y + dy });
+    } else if (dragMode === 'resize') {
+      // Preserve aspect ratio
+      const newW = Math.max(40, start.w + dx);
+      const newH = newW / aspectRef.current;
+      setOverlayRect({ ...start, w: newW, h: newH });
+    }
+  };
+
+  const onPointerUp = () => {
+    setDragMode('none');
+  };
 
   // --- Step handlers ---
 
   const handleStartCamera = async () => {
     await camera.start();
     setBgMode('camera');
-    reset();
-    if (step === 'choose-wall') {
-      setStep('choose-design');
-    }
+    if (step === 'choose-wall') setStep('choose-design');
   };
 
   const handleUploadWall = (file: File) => {
@@ -141,17 +222,13 @@ export function CanvasOverlay() {
     img.onload = () => {
       bgImageRef.current = img;
       setBgMode('upload');
-      reset();
-      if (step === 'choose-wall') {
-        setStep('choose-design');
-      }
+      if (step === 'choose-wall') setStep('choose-design');
     };
     img.src = URL.createObjectURL(file);
   };
 
   const handleUseDemoWall = () => {
     setBgMode('wall');
-    reset();
     setStep('choose-design');
   };
 
@@ -159,23 +236,28 @@ export function CanvasOverlay() {
     const result = await bgRemoval.processImage(file);
     if (result) {
       setOverlayImage(result);
+      setOverlayRect(centerOverlay(result));
       setUsePresets(false);
-      setStep('place-graffiti');
+      setStep('preview');
     }
   };
 
   const handleUsePresets = () => {
     setUsePresets(true);
-    if (presetsRef.current[selectedPreset]) {
-      setOverlayImage(presetsRef.current[selectedPreset]);
+    const preset = presetsRef.current[selectedPreset];
+    if (preset) {
+      setOverlayImage(preset);
+      setOverlayRect(centerOverlay(preset));
     }
-    setStep('place-graffiti');
+    setStep('preview');
   };
 
   const handlePresetSelect = (index: number) => {
     setSelectedPreset(index);
-    if (usePresets && presetsRef.current[index]) {
-      setOverlayImage(presetsRef.current[index]);
+    const preset = presetsRef.current[index];
+    if (usePresets && preset) {
+      setOverlayImage(preset);
+      setOverlayRect(centerOverlay(preset));
     }
   };
 
@@ -189,27 +271,50 @@ export function CanvasOverlay() {
   };
 
   const handleSave = () => {
-    exportCanvas(
-      bgMode,
-      camera.videoRef.current,
-      bgImageRef.current,
-      wallRef.current,
-      CANVAS_W,
-      CANVAS_H,
-      corners,
-      overlayImage,
-      opacity
-    );
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = CANVAS_W;
+    tempCanvas.height = CANVAS_H;
+    const tCtx = tempCanvas.getContext('2d')!;
+
+    // Draw background
+    if (bgMode === 'camera' && camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
+      const v = camera.videoRef.current;
+      const vA = v.videoWidth / v.videoHeight;
+      const cA = CANVAS_W / CANVAS_H;
+      let sx = 0, sy = 0, sw = v.videoWidth, sh = v.videoHeight;
+      if (vA > cA) { sw = v.videoHeight * cA; sx = (v.videoWidth - sw) / 2; }
+      else { sh = v.videoWidth / cA; sy = (v.videoHeight - sh) / 2; }
+      tCtx.drawImage(v, sx, sy, sw, sh, 0, 0, CANVAS_W, CANVAS_H);
+    } else if (bgMode === 'upload' && bgImageRef.current) {
+      const img = bgImageRef.current;
+      const iA = img.naturalWidth / img.naturalHeight;
+      const cA = CANVAS_W / CANVAS_H;
+      let dx = 0, dy = 0, dw = CANVAS_W, dh = CANVAS_H;
+      if (iA > cA) { dh = CANVAS_W / iA; dy = (CANVAS_H - dh) / 2; }
+      else { dw = CANVAS_H * iA; dx = (CANVAS_W - dw) / 2; }
+      tCtx.drawImage(img, dx, dy, dw, dh);
+    } else if (wallRef.current) {
+      tCtx.drawImage(wallRef.current, 0, 0, CANVAS_W, CANVAS_H);
+    }
+
+    // Draw overlay (no handles/borders)
+    if (overlayImage && overlayRect.w > 0) {
+      tCtx.globalAlpha = opacity;
+      tCtx.drawImage(overlayImage, overlayRect.x, overlayRect.y, overlayRect.w, overlayRect.h);
+      tCtx.globalAlpha = 1;
+    }
+
+    const link = document.createElement('a');
+    link.download = 'ar-graffiti.png';
+    link.href = tempCanvas.toDataURL('image/png');
+    link.click();
   };
 
-  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    handlePointerDown(getCanvasPoint(e));
-  };
-
-  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    handlePointerMove(getCanvasPoint(e));
+  const handleReset = () => {
+    setOverlayRect(overlayImage ? centerOverlay(overlayImage) : { x: 0, y: 0, w: 0, h: 0 });
   };
 
   return (
@@ -224,7 +329,7 @@ export function CanvasOverlay() {
         touchAction: 'none',
       }}
     >
-      {/* Header - always visible */}
+      {/* Header */}
       <div
         className="flex shrink-0 items-center justify-between px-4 py-2.5"
         style={{
@@ -247,7 +352,7 @@ export function CanvasOverlay() {
 
         {step !== 'choose-wall' && (
           <div className="flex gap-1.5">
-            {step === 'place-graffiti' && (
+            {step === 'preview' && (
               <button
                 onClick={handleChangeDesign}
                 className="rounded-md border border-white/15 px-3 py-1.5 text-[11px]"
@@ -288,10 +393,15 @@ export function CanvasOverlay() {
         />
       )}
 
-      {/* Step 3: Place graffiti */}
-      {step === 'place-graffiti' && (
+      {/* Step 3: Preview */}
+      {step === 'preview' && (
         <>
-          <CornerSelector phase={phase} cornerCount={corners.length} />
+          <div
+            className="shrink-0 border-b border-white/5 px-4 py-2 text-center text-sm"
+            style={{ background: 'rgba(255,255,255,0.05)', color: '#aaa' }}
+          >
+            Tahaj obrazok pre presun. Tahaj ruzovy roh pre zmenu velkosti.
+          </div>
 
           <div className="relative flex-1 overflow-hidden">
             <canvas
@@ -300,33 +410,14 @@ export function CanvasOverlay() {
               height={CANVAS_H}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerLeave={handlePointerUp}
+              onPointerUp={onPointerUp}
+              onPointerLeave={onPointerUp}
               className="block h-full w-full"
               style={{
                 objectFit: 'contain',
-                cursor:
-                  phase === 'selecting'
-                    ? 'crosshair'
-                    : dragging >= 0
-                      ? 'grabbing'
-                      : 'default',
+                cursor: dragMode === 'move' ? 'grabbing' : dragMode === 'resize' ? 'nwse-resize' : 'default',
               }}
             />
-
-            {corners.length === 0 && phase === 'selecting' && (
-              <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
-                <div
-                  className="mx-auto mb-3 flex items-center justify-center rounded-full text-3xl"
-                  style={{ width: 80, height: 80, border: '2px dashed rgba(255,255,255,0.3)' }}
-                >
-                  &#x1f446;
-                </div>
-                <div className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                  Oznac 4 rohy steny
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Controls Panel */}
@@ -348,9 +439,9 @@ export function CanvasOverlay() {
             <div className="flex items-center gap-3 px-4 pb-3 pt-2">
               <OpacitySlider value={opacity} onChange={setOpacity} />
               <SaveDialog
-                canSave={corners.length === 4}
+                canSave={overlayImage !== null}
                 onSave={handleSave}
-                onReset={reset}
+                onReset={handleReset}
               />
             </div>
           </div>
